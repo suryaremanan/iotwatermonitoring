@@ -1,0 +1,198 @@
+#include <SoftwareSerial.h>
+#include <LiquidCrystal.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// Data wire is plugged into port 2 on the Arduino
+#define ONE_WIRE_BUS 4
+
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
+
+SoftwareSerial espSerial(2,3);       
+// initialize the library with the numbers of the interface pins
+LiquidCrystal lcd(12, 13, 11, 10,9,8 );
+
+String apiKey = "LRQJN148MNKYLP8A";     // replace with your channel's thingspeak WRITE API key
+
+String ssid="OnePlus2KSR";    // Wifi network SSID
+String password ="surya123";  // Wifi network password
+ 
+const int t=4,ph=A0,tb=A1,cy=A2;
+
+float tvalue,phvalue,tbvalue,cyvalue;
+
+   
+  void setup() {   
+     sensors.begin();             
+   lcd.begin(16, 2);
+ lcd.print("Welcome");
+ delay(1000);
+ lcd.clear();
+  espSerial.begin(9600);  // e nable software serial
+                          // Your esp8266 module's speed is probably at 115200. 
+                          // For this reason the first time set the speed to 115200 or to your esp8266 configured speed 
+                          // and upload. Then change to 9600 and upload again
+  
+                           //espSerial.println("AT+CIOBAUD=9600");         // set esp8266 serial speed to 9600 bps
+                           //espSerial.println("AT+UART_CUR=9600,8,1,0,0");         // set esp8266 serial speed to 9600 bps
+  
+                            //showResponse(1000);
+   lcd.print("AT+RST"); 
+   lcd.setCursor(0,1);
+  espSerial.println("AT+RST");         // reset esp8266
+  showResponse(6000);
+  lcd.clear();
+  lcd.print("setting mode"); 
+   lcd.setCursor(0,1);
+  espSerial.println("AT+CWMODE=1");   // set esp8266 as client
+  showResponse(1000);
+
+   lcd.clear();
+  lcd.print("connecting"); 
+   lcd.setCursor(0,1);
+  espSerial.println("AT+CWJAP=\""+ssid+"\",\""+password+"\"");  // set your home router SSID and password
+  showResponse(8000);
+  delay(1000);
+   lcd.clear();
+  lcd.print("pls wait"); 
+   lcd.setCursor(0,1);
+  espSerial.println("AT+CIPMUX=0");  // set your home router SSID and password
+  showResponse(5000);
+  lcd.clear();
+ lcd.print("Setup completed");
+}
+void loop() {
+ temperaturefind();
+ 
+  
+  phfind();
+  
+   
+   
+  turbidityfind();
+
+  
+  conductivityfind();
+
+   lcd.clear();
+  lcd.print("tem-");
+  lcd.print(tvalue);
+  lcd.print(" ");
+  lcd.print("ph-");
+  lcd.print(phvalue);
+  lcd.setCursor(0,1);
+  lcd.print("tb-=");
+  lcd.print(tbvalue);
+  lcd.print(" ");
+  lcd.print("cy");
+  lcd.print(cyvalue);
+  delay(5000);
+thingSpeakWrite( phvalue,tvalue,tbvalue,cyvalue);                                      // Write values to thingspeak     
+  delay(20000); 
+  
+  
+
+
+}
+
+
+void showResponse(int waitTime){
+    long t=millis();
+    
+    char c;
+    while (t+waitTime>millis()){
+      if (espSerial.find("OK")){
+        c=espSerial.read();
+         lcd.print("OK" );
+      }
+    }
+                   
+}
+
+void thingSpeakWrite(float value1, float value2,float value3,float value4){
+  
+  lcd.clear();
+  lcd.print("data sending");
+  delay(2000);
+  String cmd = "AT+CIPSTART=\"TCP\",\"";                  // TCP connection
+  cmd += "184.106.153.149";                               // api.thingspeak.com
+  cmd += "\",80";
+   lcd.clear();
+   lcd.setCursor(0,1);
+  espSerial.println(cmd);
+  showResponse(1000);
+  if(espSerial.find("Error")){
+    if (true) lcd.clear();
+    lcd.print("AT+CIPSTART error");
+    return 0;
+  }
+  String getStr = "GET /update?api_key=";   // prepare GET string
+  getStr += apiKey;
+   getStr +="&field1=";
+  getStr +=value1;
+  getStr +="&field2=";
+  getStr += value2;
+  getStr +="&field3=";
+  getStr += value3;
+  getStr +="&field4=";
+  getStr += value4;
+  getStr += "\r\n\r\n";
+
+  // send data length
+  cmd = "AT+CIPSEND=";
+  cmd += String(getStr.length());
+  espSerial.println(cmd);
+delay(100);
+  if(espSerial.find(">")){
+    lcd.clear();
+    lcd.print("got connection");
+    lcd.setCursor(0,1);
+    espSerial.print(getStr);
+     showResponse(1000);
+    }
+  else{
+    espSerial.println("AT+CIPCLOSE");
+       showResponse(1000);}
+    
+}
+
+void temperaturefind()
+{
+  sensors.requestTemperatures();
+ tvalue=sensors.getTempCByIndex(0); 
+  
+  
+}
+void  phfind()
+{
+   int x=analogRead(ph);
+   phvalue= (5.0/1023.0)*x;
+   if(phvalue>2.0&&phvalue<2.5)
+   phvalue=6.8;
+   else 
+   phvalue=2.4;
+
+//lcd.print("phvalue--");
+//lcd.print(phvalue);
+
+
+}
+void turbidityfind()
+{
+   int x=analogRead(tb);
+lcd.print("tb--");
+  lcd.println(x);
+  tbvalue=map(x,100,900,0,100);
+}
+
+void conductivityfind()
+{
+   int x=analogRead(cy);
+lcd.print("cy--");
+lcd.println(x);
+cyvalue=map(x,50,1000,0,100);
+}
